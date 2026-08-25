@@ -49,6 +49,7 @@ jobs:
 
           if [[ "$version" == "$current_version" ]]; then
             echo "No update: already at $current_version"
+            echo "version=$current_version" >> "$GITHUB_OUTPUT"
             echo 'changed=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -84,7 +85,6 @@ jobs:
           git push origin HEAD:main
 
       - name: Configure AUR SSH
-        if: steps.update.outputs.changed == 'true'
         shell: bash
         env:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
@@ -103,27 +103,28 @@ jobs:
           chmod 644 ~/.ssh/known_hosts
 
       - name: Push update to AUR
-        if: steps.update.outputs.changed == 'true'
         shell: bash
         run: |
           set -euo pipefail
           aur_dir=$(mktemp -d)
           trap 'rm -rf "$aur_dir"' EXIT
+          aur_repo="$aur_dir/repository"
           aur_url=ssh://aur@aur.archlinux.org/qoder-cli-cn-bin.git
           ssh_command="ssh -i $HOME/.ssh/aur_update_key -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
 
-          GIT_SSH_COMMAND="$ssh_command" git clone "$aur_url" "$aur_dir"
-          cp -a "$GITHUB_WORKSPACE/qoder-cli-cn/." "$aur_dir/"
+          GIT_SSH_COMMAND="$ssh_command" git clone "$aur_url" "$aur_repo"
+          git -C "$aur_repo" rev-parse --git-dir
+          cp -a "$GITHUB_WORKSPACE/qoder-cli-cn/." "$aur_repo/"
 
-          git -C "$aur_dir" config user.name 'github-actions[bot]'
-          git -C "$aur_dir" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git -C "$aur_dir" add -A
+          git -C "$aur_repo" config user.name 'github-actions[bot]'
+          git -C "$aur_repo" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C "$aur_repo" add -A
 
-          if git -C "$aur_dir" diff --cached --quiet; then
+          if git -C "$aur_repo" diff --cached --quiet; then
             echo 'AUR package is already up to date'
             exit 0
           fi
 
           version='${{ steps.update.outputs.version }}'
-          git -C "$aur_dir" commit -m "update to $version"
-          GIT_SSH_COMMAND="$ssh_command" git -C "$aur_dir" push origin HEAD:master
+          git -C "$aur_repo" commit -m "update to $version"
+          GIT_SSH_COMMAND="$ssh_command" git -C "$aur_repo" push origin HEAD:master
