@@ -99,18 +99,8 @@ jobs:
           install -d -m 700 ~/.ssh
           printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur_update_key
           chmod 600 ~/.ssh/aur_update_key
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          ssh-keyscan -H -t ed25519 aur.archlinux.org > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
-
-          cat > ~/.ssh/config <<'EOF'
-          Host aur.archlinux.org
-            HostName aur.archlinux.org
-            User aur
-            IdentityFile ~/.ssh/aur_update_key
-            IdentitiesOnly yes
-            StrictHostKeyChecking yes
-          EOF
-          chmod 600 ~/.ssh/config
 
       - name: Push update to AUR
         if: steps.update.outputs.changed == 'true'
@@ -119,4 +109,5 @@ jobs:
           set -euo pipefail
           git remote add aur ssh://aur@aur.archlinux.org/qoder-cli-cn-bin.git
           aur_commit=$(git subtree split --prefix=qoder-cli-cn)
-          git push aur "$aur_commit:master"
+          GIT_SSH_COMMAND='ssh -i ~/.ssh/aur_update_key -o IdentitiesOnly=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o StrictHostKeyChecking=yes' \
+            git push aur "$aur_commit:master"
