@@ -114,7 +114,13 @@ jobs:
 
           GIT_SSH_COMMAND="$ssh_command" git clone "$aur_url" "$aur_repo"
           git -C "$aur_repo" rev-parse --git-dir
-          cp -a "$GITHUB_WORKSPACE/qoder-cli-cn/." "$aur_repo/"
+          cp -a "$GITHUB_WORKSPACE/qoder-cli-cn/PKGBUILD" \
+            "$GITHUB_WORKSPACE/qoder-cli-cn/.SRCINFO" \
+            "$GITHUB_WORKSPACE/qoder-cli-cn/LICENSE" \
+            "$GITHUB_WORKSPACE/qoder-cli-cn/qoderclicn.bash" \
+            "$GITHUB_WORKSPACE/qoder-cli-cn/qoderclicn.zsh" \
+            "$GITHUB_WORKSPACE/qoder-cli-cn/qoderclicn.fish" \
+            "$aur_repo/"
 
           git -C "$aur_repo" config user.name 'github-actions[bot]'
           git -C "$aur_repo" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
