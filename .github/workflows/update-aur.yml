@@ -32,8 +32,11 @@ jobs:
         shell: bash
         env:
           MANIFEST_URL: https://static.qoder.com.cn/qoder-cli-cn/channels/manifest.json
+          PACKAGE_DIR: qoder-cli-cn
         run: |
           set -euo pipefail
+
+          cd "$GITHUB_WORKSPACE/$PACKAGE_DIR"
 
           manifest=$(curl --fail --silent --show-error "$MANIFEST_URL")
           version=$(jq -er '.latest | strings' <<<"$manifest")
@@ -76,7 +79,7 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add PKGBUILD .SRCINFO
+          git add qoder-cli-cn/PKGBUILD qoder-cli-cn/.SRCINFO
           git commit -m "update to $VERSION"
           git push origin HEAD:main
 
@@ -115,4 +118,5 @@ jobs:
         run: |
           set -euo pipefail
           git remote add aur ssh://aur@aur.archlinux.org/qoder-cli-cn-bin.git
-          git push aur HEAD:master
+          aur_commit=$(git subtree split --prefix=qoder-cli-cn)
+          git push aur "$aur_commit:master"
