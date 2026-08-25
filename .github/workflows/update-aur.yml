@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm --needed \
-            base-devel curl git jq openssh
+            base-devel curl git jq openssh pacman-contrib
 
       - name: Check out GitHub repository
         uses: actions/checkout@v4
