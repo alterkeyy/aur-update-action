@@ -1,0 +1,118 @@
+name: Update AUR package
+
+on:
+  schedule:
+    # GitHub Actions uses UTC; 17:00 UTC is 01:00 Asia/Shanghai.
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: aur-package-update
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+
+    steps:
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel curl git jq openssh
+
+      - name: Check out GitHub repository
+        uses: actions/checkout@v4
+
+      - name: Update package metadata
+        id: update
+        shell: bash
+        env:
+          MANIFEST_URL: https://static.qoder.com.cn/qoder-cli-cn/channels/manifest.json
+        run: |
+          set -euo pipefail
+
+          manifest=$(curl --fail --silent --show-error "$MANIFEST_URL")
+          version=$(jq -er '.latest | strings' <<<"$manifest")
+          current_version=$(sed -nE 's/^pkgver=([^[:space:]]+)$/\1/p' PKGBUILD)
+
+          if [[ -z "$current_version" ]]; then
+            echo 'Unable to read pkgver from PKGBUILD' >&2
+            exit 1
+          fi
+
+          if [[ "$version" == "$current_version" ]]; then
+            echo "No update: already at $current_version"
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "Invalid version from manifest: $version" >&2
+            exit 1
+          fi
+
+          sed -i -E "s/^pkgver=.*/pkgver=$version/" PKGBUILD
+
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          runuser -u builder -- updpkgsums
+          runuser -u builder -- bash -c 'makepkg --printsrcinfo > .SRCINFO'
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Commit package update
+        if: steps.update.outputs.changed == 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.update.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add PKGBUILD .SRCINFO
+          git commit -m "update to $VERSION"
+          git push origin HEAD:main
+
+      - name: Configure AUR SSH
+        if: steps.update.outputs.changed == 'true'
+        shell: bash
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$AUR_SSH_PRIVATE_KEY" ]]; then
+            echo 'AUR_SSH_PRIVATE_KEY is not configured' >&2
+            exit 1
+          fi
+
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur_update_key
+          chmod 600 ~/.ssh/aur_update_key
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+          cat > ~/.ssh/config <<'EOF'
+          Host aur.archlinux.org
+            HostName aur.archlinux.org
+            User aur
+            IdentityFile ~/.ssh/aur_update_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Push update to AUR
+        if: steps.update.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add aur ssh://aur@aur.archlinux.org/qoder-cli-cn-bin.git
+          git push aur HEAD:master
