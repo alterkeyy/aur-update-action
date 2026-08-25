@@ -107,7 +107,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git remote add aur ssh://aur@aur.archlinux.org/qoder-cli-cn-bin.git
-          aur_commit=$(git subtree split --prefix=qoder-cli-cn)
-          GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur_update_key -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes" \
-            git push aur "$aur_commit:master"
+          aur_dir=$(mktemp -d)
+          trap 'rm -rf "$aur_dir"' EXIT
+          aur_url=ssh://aur@aur.archlinux.org/qoder-cli-cn-bin.git
+          ssh_command="ssh -i $HOME/.ssh/aur_update_key -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+
+          GIT_SSH_COMMAND="$ssh_command" git clone "$aur_url" "$aur_dir"
+          cp -a "$GITHUB_WORKSPACE/qoder-cli-cn/." "$aur_dir/"
+
+          git -C "$aur_dir" config user.name 'github-actions[bot]'
+          git -C "$aur_dir" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C "$aur_dir" add -A
+
+          if git -C "$aur_dir" diff --cached --quiet; then
+            echo 'AUR package is already up to date'
+            exit 0
+          fi
+
+          version='${{ steps.update.outputs.version }}'
+          git -C "$aur_dir" commit -m "update to $version"
+          GIT_SSH_COMMAND="$ssh_command" git -C "$aur_dir" push origin HEAD:master
